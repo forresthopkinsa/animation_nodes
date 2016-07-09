@@ -6,12 +6,15 @@ import json
 
 import io
 import serial
-import fcntl
 from serial.tools import list_ports
 
 import bpy
 from ... base_types.node import AnimationNode
+from ... ui.info_popups import showTextPopup
 from bpy.props import *
+
+if sys.platform.startswith('linux'):
+    import fcntl
 
 cache = defaultdict(dict)
 
@@ -52,6 +55,7 @@ class SerialPort(bpy.types.Node, AnimationNode):
 
     bl_idname = "an_SerialPortNode"
     bl_label = "Serial Port"
+    options = {"No Subprogram"}
 
     config_defaults = {
         # "init_done": False,
@@ -107,7 +111,6 @@ class SerialPort(bpy.types.Node, AnimationNode):
             # so we close the conneciton and change the device:
             self.close()
             cache[self.identifier]["serial"].port = self.port
-
 
     # portlist_items = [("a", "/dev/ttyACM0", )]
     port = EnumProperty(
@@ -293,13 +296,27 @@ class SerialPort(bpy.types.Node, AnimationNode):
         #     cache[self.identifier]
         # )
         if cache[self.identifier]["serial"].is_open:
-            lines = cache[self.identifier]["serialio"].readlines()
-            # print(lines)
-            if len(lines) > 0:
-                last_line = lines[len(lines)-1]
-                print(last_line)
-                cache[self.identifier]["text_received"] = last_line
-
+            ser = cache[self.identifier]["serial"]
+            sio = cache[self.identifier]["serialio"]
+            try:
+                lines = sio.readlines()
+            except serial.serialutil.SerialException as e:
+                error_message = (
+                    "readlines failed at port {}: {}"
+                    .format(
+                        ser.port,
+                        e
+                    )
+                )
+                showTextPopup(text=error_message, title="Error", icon="INFO")
+                # print(error_message)
+                self.close()
+            else:
+                # print(lines)
+                if len(lines) > 0:
+                    last_line = lines[len(lines)-1]
+                    # print(last_line)
+                    cache[self.identifier]["text_received"] = last_line
         # return cached text
         result_text_received = cache[self.identifier]["text_received"]
         # print(
@@ -315,11 +332,11 @@ class SerialPort(bpy.types.Node, AnimationNode):
         """Init node instance."""
         # setup internal cache
         cache[self.identifier] = {}
-        print("initNode:")
-        print("cache:", cache)
-        print("extend_deep...")
+        # print("initNode:")
+        # print("cache:", cache)
+        # print("extend_deep...")
         extend_deep(cache[self.identifier], self.config_defaults.copy())
-        print("cache:", cache)
+        # print("cache:", cache)
         # print("cache:", cache[self.identifier])
 
         # print("portListItemsUpdate")
@@ -327,9 +344,9 @@ class SerialPort(bpy.types.Node, AnimationNode):
         # print("baudrateListItemsUpdate")
         self.baudrateListItemsUpdate()
 
-        print("init serial port:")
-        print("self.baudrate", self.baudrate)
-        print("self.port", self.port)
+        # print("init serial port:")
+        # print("self.baudrate", self.baudrate)
+        # print("self.port", self.port)
 
         # setup serial port
         # cache[self.identifier]["serial"] = serial.Serial()
@@ -353,7 +370,7 @@ class SerialPort(bpy.types.Node, AnimationNode):
         # sio.flush()
         # hello = sio.readline()
         # print(hello == unicode("hello\n"))
-        print("done.")
+        # print("done.")
 
         # lastly set init done flag:
         cache[self.identifier]["init_done"] = True
@@ -368,7 +385,7 @@ class SerialPort(bpy.types.Node, AnimationNode):
     def open(self):
         """Open Serial Port."""
         if not cache[self.identifier]["serial"].is_open:
-            print("open port:")
+            # print("open port:")
             # print(" serial:", cache[self.identifier]["serial"])
             # print(" port:", cache[self.identifier]["serial"].port)
             # print(" baudrate:", cache[self.identifier]["serial"].baudrate)
@@ -377,31 +394,53 @@ class SerialPort(bpy.types.Node, AnimationNode):
             try:
                 ser.open()
             except serial.serialutil.SerialException as e:
-                print(
+                error_message = (
                     "Port {} is already in use by other program: {}"
                     .format(
-                        ser,
+                        ser.port,
                         e
                     )
                 )
-            print(" is_open:", ser.is_open)
+                showTextPopup(
+                    text=error_message,
+                    title="Error",
+                    icon="INFO"
+                )
+                # print(error_message)
+            # print(" is_open:", ser.is_open)
 
             # port already open check based on:
             # How to check if serial port is already open in Linux,
             # using Python 2.7 and pyserial?
             # http://stackoverflow.com/a/19823120/574981
-            if ser.is_open:
-                try:
-                    fcntl.flock(ser.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except IOError as e:
-                    print(
-                        "Port {} is already in use by other program: {}"
-                        .format(
-                            ser,
-                            e
+            # https://docs.python.org/3/library/sys.html#sys.platform
+            if sys.platform.startswith('linux'):
+                # Linux-specific code here...
+                # only try to lock if open was successfully
+                if ser.is_open:
+                    try:
+                        # lock EX exclusive NB nonblocking
+                        fcntl.flock(
+                            ser.fileno(),
+                            fcntl.LOCK_EX | fcntl.LOCK_NB
                         )
-                    )
-                    ser.close()
+                        pass
+                    except IOError as e:
+                        error_message = (
+                            "Port {} is already in use by other program: {}"
+                            .format(
+                                ser.port,
+                                e
+                            )
+                        )
+                        showTextPopup(
+                            text=error_message,
+                            title="Error",
+                            icon="INFO"
+                        )
+                        # print(error_message)
+                        # if lock failed close it.
+                        ser.close()
         self.connectButtonUpdate()
 
     def close(self):
@@ -409,7 +448,7 @@ class SerialPort(bpy.types.Node, AnimationNode):
         ser = cache[self.identifier]["serial"]
         if ser.is_open:
             print("close port:")
-            if ser.is_open:
+            if sys.platform.startswith('linux'):
                 # unlock
                 try:
                     fcntl.flock(ser.fileno(), fcntl.LOCK_UN)
