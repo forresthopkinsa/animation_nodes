@@ -1,21 +1,16 @@
-"""Serial Node things."""
+"""OLA Node things."""
 
 from collections import defaultdict
 
 import sys
 import json
 
-import io
-import serial
-from serial.tools import list_ports
 
 import bpy
 from ... base_types.node import AnimationNode
 from ... ui.info_popups import showTextPopup
 from bpy.props import *
 
-if sys.platform.startswith('linux'):
-    import fcntl
 
 cache = defaultdict(dict)
 
@@ -51,58 +46,61 @@ def extend_deep(obj_1, obj_2):
 # classes
 
 
-class SerialPort(bpy.types.Node, AnimationNode):
-    """Animation Node to get data from a SerialPort."""
+class OLADeamon(bpy.types.Node, AnimationNode):
+    """Animation Node to get data from OLA Deamon."""
 
-    bl_idname = "an_SerialPortNode"
-    bl_label = "Serial Port"
+    bl_idname = "an_OLADeamonNode"
+    bl_label = "OLA Deamon"
     options = {"No Subprogram"}
 
     config_defaults = {
         # "init_done": False,
+        "universe": None,
         "serial": None,
         "serialio": None,
-        "text_received": "",
-        "text_send": "",
+        "data_received": [],
+        "data_send": [],
         "buttonLabel": "Test",
-        "portlist": [],
-        "baudratelist": [],
+        "universelist": [],
     }
 
     ##########################################
     # user interface elements
 
-    def portListItemsGet(self, context):
-        """Get list of available Ports."""
-        if "portlist" not in cache[self.identifier]:
-            self.portListItemsUpdate()
-        list = cache[self.identifier]["portlist"]
+    def universeListItemsGet(self, context):
+        """Get list of available Universes."""
+        if "universelist" not in cache[self.identifier]:
+            self.universeListItemsUpdate()
+        list = cache[self.identifier]["universelist"]
         return list
 
-    def portListItemsCreate(self):
+    def universeListItemsCreate(self):
         """create list of available Ports."""
-        items = []
-        for port in list_ports.comports():
-            # print(port)
-            items.append(
-                (
-                    # identifier
-                    # port.device_path,
-                    port.device,
-                    # display name
-                    port.device,
-                    # description
-                    port.description,
-                )
-            )
+        items = [
+            ("0", "Output1", "a Universe with output"),
+            ("1", "display name", "some description")
+        ]
+        # items = []
+        # for port in universes:
+        #     # print(port)
+        #     items.append(
+        #         (
+        #             # identifier
+        #             port.device,
+        #             # display name
+        #             port.device,
+        #             # description
+        #             port.description,
+        #         )
+        #     )
         return items
 
-    def portListItemsUpdate(self):
+    def universeListItemsUpdate(self):
         """Update list of available Ports."""
-        cache[self.identifier]["portlist"] = self.portListItemsCreate()
+        cache[self.identifier]["universelist"] = self.universeListItemsCreate()
 
-    def portChanged(self, context):
-        """Set changed port to serial obejct."""
+    def universeChanged(self, context):
+        """Set changed universe to ola obejct."""
         if (
             (self.identifier in cache) and
             ("init_done" in cache[self.identifier]) and
@@ -110,65 +108,17 @@ class SerialPort(bpy.types.Node, AnimationNode):
         ):
             # serial port is available.
             # so we close the conneciton and change the device:
-            self.close()
-            cache[self.identifier]["serial"].port = self.port
+            # self.close()
+            # cache[self.identifier]["serial"].port = self.port
+            print(self.Universe)
 
-    # portlist_items = [("a", "/dev/ttyACM0", )]
-    port = EnumProperty(
-        name="Port",
+    # universelist_items = [("a", "/dev/ttyACM0", )]
+    universe = EnumProperty(
+        name="Universe",
         description="connect to",
-        items=portListItemsGet,
+        items=universeListItemsGet,
         # items=[("identifier", "label", "description")]
-        update=portChanged
-    )
-
-    def baudrateListItemsGet(self, context):
-        """Get list of available Baudrates."""
-        if "baudratelist" not in cache[self.identifier]:
-            self.baudrateListItemsUpdate()
-        list = cache[self.identifier]["baudratelist"]
-        return list
-
-    def baudrateListItemsCreate(self):
-        """create list of available Ports."""
-        items = []
-        for baudrate in serial.Serial.BAUDRATES:
-            # print(baudrate)
-            items.append(
-                (
-                    # identifier
-                    str(baudrate),
-                    # display name
-                    str(baudrate),
-                    # description
-                    str(baudrate),
-                )
-            )
-        return items
-
-    def baudrateListItemsUpdate(self):
-        """Update list of available Ports."""
-        cache[self.identifier]["baudratelist"] = self.baudrateListItemsCreate()
-
-    def baudrateChanged(self, context):
-        """Set changed baudrate to serial obejct."""
-        if (
-            (self.identifier in cache) and
-            ("init_done" in cache[self.identifier]) and
-            (cache[self.identifier]["init_done"] is True)
-        ):
-            # serial port is available.
-            # so we close the conneciton and change the baudrate:
-            self.close()
-            cache[self.identifier]["serial"].baudrate = self.baudrate
-
-    # portlist_items = [("115200", "115200", )]
-    baudrate = EnumProperty(
-        name="Baudrate",
-        description="choose baudrate",
-        items=baudrateListItemsGet,
-        # items=[("identifier", "label", "description")]
-        update=baudrateChanged
+        update=universeChanged
     )
 
     # example for checkbox
@@ -189,24 +139,23 @@ class SerialPort(bpy.types.Node, AnimationNode):
         # self.newInput("String", "Port", "port", value="/dev/ttyACM0")
         # self.newInput("Integer", "Baudrate", "baudrate", value=115200)
 
-        # self.newOutput("an_IntegerListSocket")
-        self.newOutput("String", "Received Text", "text_received")
+        self.newOutput("an_IntegerListSocket", "Data", "data_received")
+        # self.newOutput("String", "Received Text", "data_received")
 
     def draw(self, layout):
         # example for checkbox
         # layout.prop(self, "connected")
 
         row = layout.row(align=True)
-        row.prop(self, "port", text="")
+        row.prop(self, "universe", text="")
         self.invokeFunction(
             row,
-            "portListItemsUpdate",
+            "universeListItemsUpdate",
             text="",
-            description="update port list",
+            description="update universe list",
             icon="FILE_REFRESH"
         )
 
-        layout.prop(self, "baudrate", text="")
 
         # connectButton
         connectButtonLabel = cache[self.identifier].get(
@@ -266,7 +215,8 @@ class SerialPort(bpy.types.Node, AnimationNode):
                 self.open()
 
     def test_readlines(self):
-        lines = cache[self.identifier]["serialio"].readlines()
+        # lines = cache[self.identifier]["serialio"].readlines()
+        lines = "test_readlines n/a"
         print(lines)
 
     ##########################################
@@ -279,7 +229,7 @@ class SerialPort(bpy.types.Node, AnimationNode):
             ("init_done" not in cache[self.identifier]) or
             (cache[self.identifier]["init_done"] is False)
         ):
-            # self.initNode(self.portlist, self.baudrate)
+            # self.initNode(self.universelist, self.baudrate)
             self.initNode()
 
         # print("execute:")
@@ -296,38 +246,39 @@ class SerialPort(bpy.types.Node, AnimationNode):
         #     "cache:",
         #     cache[self.identifier]
         # )
-        if cache[self.identifier]["serial"].is_open:
-            ser = cache[self.identifier]["serial"]
-            sio = cache[self.identifier]["serialio"]
-            try:
-                lines = sio.readlines()
-            except serial.serialutil.SerialException as e:
-                error_message = (
-                    "readlines failed at port {}: {}"
-                    .format(
-                        ser.port,
-                        e
-                    )
-                )
-                showTextPopup(text=error_message, title="Error", icon="INFO")
-                # print(error_message)
-                self.close()
-            else:
-                # print(lines)
-                if len(lines) > 0:
-                    last_line = lines[len(lines)-1]
-                    # print(last_line)
-                    cache[self.identifier]["text_received"] = last_line
+        # if cache[self.identifier]["serial"].is_open:
+        #     ser = cache[self.identifier]["serial"]
+        #     sio = cache[self.identifier]["serialio"]
+        #     try:
+        #         lines = sio.readlines()
+        #     except serial.serialutil.SerialException as e:
+        #         error_message = (
+        #             "readlines failed at port {}: {}"
+        #             .format(
+        #                 ser.port,
+        #                 e
+        #             )
+        #         )
+        #         showTextPopup(text=error_message, title="Error", icon="INFO")
+        #         # print(error_message)
+        #         self.close()
+        #     else:
+        #         # print(lines)
+        #         if len(lines) > 0:
+        #             last_line = lines[len(lines)-1]
+        #             # print(last_line)
+        #             cache[self.identifier]["data_received"] = last_line
+        cache[self.identifier]["data_received"] = [0, 1, 2, 3, 55, 44]
         # return cached text
-        result_text_received = cache[self.identifier]["text_received"]
+        result_data_received = cache[self.identifier]["data_received"]
         # print(
-        #     "Node {}:  text_received: {}".format(
+        #     "Node {}:  data_received: {}".format(
         #         self.identifier,
-        #         cache[self.identifier]["text_received"]
+        #         cache[self.identifier]["data_received"]
         #     )
         # )
-        # result_text_received = ""
-        return result_text_received
+        # result_data_received = ""
+        return result_data_received
 
     def initNode(self):
         """Init node instance."""
@@ -340,10 +291,8 @@ class SerialPort(bpy.types.Node, AnimationNode):
         # print("cache:", cache)
         # print("cache:", cache[self.identifier])
 
-        # print("portListItemsUpdate")
-        self.portListItemsUpdate()
-        # print("baudrateListItemsUpdate")
-        self.baudrateListItemsUpdate()
+        # print("universeListItemsUpdate")
+        self.universeListItemsUpdate()
 
         # print("init serial port:")
         # print("self.baudrate", self.baudrate)
@@ -355,15 +304,15 @@ class SerialPort(bpy.types.Node, AnimationNode):
         # cache[self.identifier]["serial"].baudrate = baudrate
 
         # https://pythonhosted.org/pyserial/shortintro.html#eol
-        ser = serial.serial_for_url(
-            self.port,
-            baudrate=self.baudrate,
-            timeout=0,
-            do_not_open=True
-        )
-        sio = io.TextIOWrapper(io.BufferedRWPair(ser, ser))
-        cache[self.identifier]["serial"] = ser
-        cache[self.identifier]["serialio"] = sio
+        # ser = serial.serial_for_url(
+        #     self.port,
+        #     baudrate=self.baudrate,
+        #     timeout=0,
+        #     do_not_open=True
+        # )
+        # sio = io.TextIOWrapper(io.BufferedRWPair(ser, ser))
+        # cache[self.identifier]["serial"] = ser
+        # cache[self.identifier]["serialio"] = sio
         self.connectButtonUpdate()
         #
         # sio.write(unicode("hello\n"))
