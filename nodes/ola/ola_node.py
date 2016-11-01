@@ -268,7 +268,12 @@ class OLADeamon(bpy.types.Node, AnimationNode):
         #             last_line = lines[len(lines)-1]
         #             # print(last_line)
         #             cache[self.identifier]["data_received"] = last_line
-        cache[self.identifier]["data_received"] = [0, 1, 2, 3, 55, 44]
+        cache[self.identifier]["data_received"] = [
+            0, 200, 255,    # 1 türkis
+            0, 255, 0,      # 4 green
+            150, 100, 0,      # 7 yellow
+            100, 0, 200,    # 10 lounge
+        ]
         # return cached text
         result_data_received = cache[self.identifier]["data_received"]
         # print(
