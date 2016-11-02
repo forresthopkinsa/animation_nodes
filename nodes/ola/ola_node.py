@@ -8,9 +8,14 @@ import json
 
 import bpy
 from ... base_types.node import AnimationNode
+from ... base_types.socket import AnimationNodeSocket
 from ... ui.info_popups import showTextPopup
 from bpy.props import *
 
+# import needed ola helper modules
+from . olathreaded import OLAThread, OLAThread_States
+
+olapath = "/home/stefan/ola/python"
 
 cache = defaultdict(dict)
 
@@ -46,18 +51,17 @@ def extend_deep(obj_1, obj_2):
 # classes
 
 
-class OLADeamon(bpy.types.Node, AnimationNode):
-    """Animation Node to get data from OLA Deamon."""
+class OLAClient(bpy.types.Node, AnimationNode):
+    """Animation Node to connect to OLA Deamon."""
 
-    bl_idname = "an_OLADeamonNode"
-    bl_label = "OLA Deamon"
+    bl_idname = "an_OLAClientNode"
+    bl_label = "OLA Client"
     options = {"No Subprogram"}
 
     config_defaults = {
         # "init_done": False,
         "universe": None,
-        "serial": None,
-        "serialio": None,
+        "ola_manager": None,
         "data_received": [],
         "data_send": [],
         "buttonLabel": "Test",
@@ -121,6 +125,15 @@ class OLADeamon(bpy.types.Node, AnimationNode):
         update=universeChanged
     )
 
+    olapath = StringProperty(
+        name="API Path",
+        description="set path to OLA python api on your disc. "
+        "if you change this you have to "
+        "save & restart blender to take effect"
+        "or reload all scripts with F8",
+        default="/home/stefan/ola/python/"
+    )
+
     # example for checkbox
     # def connectedChanged(self, context):
     #     print("connected has changed...", self.connected)
@@ -135,8 +148,13 @@ class OLADeamon(bpy.types.Node, AnimationNode):
     def create(self):
         """Create node type."""
         # inputs
-        # these are now handled in the draw function as ui elements.
-        # self.newInput("String", "Port", "port", value="/dev/ttyACM0")
+        # others are handled in the draw function as ui elements.
+        # self.newInput(
+        #     "String",
+        #     "OLA Path",
+        #     "olapath",
+        #     value="/home/stefan/ola/python"
+        # )
         # self.newInput("Integer", "Baudrate", "baudrate", value=115200)
 
         self.newOutput("an_IntegerListSocket", "Data", "data_received")
@@ -156,7 +174,6 @@ class OLADeamon(bpy.types.Node, AnimationNode):
             icon="FILE_REFRESH"
         )
 
-
         # connectButton
         connectButtonLabel = cache[self.identifier].get(
             "connectButtonLabel",
@@ -166,19 +183,22 @@ class OLADeamon(bpy.types.Node, AnimationNode):
             layout,
             "connectButtonToggle",
             text=connectButtonLabel,
-            description="toggle Serial Port connection",
+            description="toggle OLA Client connection",
             icon="PLUGIN"
         )
 
         # test button
         self.invokeFunction(
             layout,
-            "test_readlines",
-            text="read lines",
-            description="read all incomming lines",
-            icon="TEXT"
+            "test_things",
+            text="test things",
+            description="random test things",
+            icon="NONE"
+            # icon="TEXT"
             # icon="LONGDISPLAY"
         )
+
+        layout.prop(self, "olapath")
 
     def connectButtonUpdate(self):
         """Update connectButton label."""
@@ -188,36 +208,48 @@ class OLADeamon(bpy.types.Node, AnimationNode):
             ("init_done" in cache[self.identifier]) and
             (cache[self.identifier]["init_done"] is True)
         ):
-            state = cache[self.identifier]["serial"].is_open
-            # print("update text: state:", state)
-            if state:
-                # currently connected. so button closes connection
-                cache[self.identifier]["connectButtonLabel"] = "close"
-            else:
+            ola_manager = cache[self.identifier]["ola_manager"]
+            state = ola_manager.state
+            if state is OLAThread_States.standby:
                 # currently disconnected. so button opens connection
                 cache[self.identifier]["connectButtonLabel"] = "connect"
+            elif state is OLAThread_States.running:
+                # currently connected. so button closes connection
+                cache[self.identifier]["connectButtonLabel"] = "close"
             # print(
             #     "connectButtonLabel: ",
             #     cache[self.identifier]["connectButtonLabel"]
             # )
+        else:
+            cache[self.identifier]["connectButtonLabel"] = "n/a"
 
     def connectButtonToggle(self):
-        """Toggle serial port connection state."""
+        """Toggle connection state."""
         if (
             (self.identifier in cache) and
             ("init_done" in cache[self.identifier]) and
             (cache[self.identifier]["init_done"] is True)
         ):
-            state = cache[self.identifier]["serial"].is_open
-            if state:
-                self.close()
+            ola_manager = cache[self.identifier]["ola_manager"]
+            state = ola_manager.state
+            print("state: ", state)
+            if state is OLAThread_States.standby:
+                print("connect!!")
+                self.connect()
             else:
-                self.open()
+                print("close!!")
+                self.close()
 
-    def test_readlines(self):
-        # lines = cache[self.identifier]["serialio"].readlines()
-        lines = "test_readlines n/a"
-        print(lines)
+    def test_things(self):
+        if (
+            (self.identifier in cache) and
+            ("init_done" in cache[self.identifier]) and
+            (cache[self.identifier]["init_done"] is True)
+        ):
+            # lines = cache[self.identifier]["serialio"].readlines()
+            print("Hallo Welt :-)")
+        else:
+            print("have to do my init...")
 
     ##########################################
     # main logic
@@ -274,16 +306,14 @@ class OLADeamon(bpy.types.Node, AnimationNode):
             150, 100, 0,      # 7 yellow
             100, 0, 200,    # 10 lounge
         ]
-        # return cached text
-        result_data_received = cache[self.identifier]["data_received"]
+        # return cached data
         # print(
         #     "Node {}:  data_received: {}".format(
         #         self.identifier,
         #         cache[self.identifier]["data_received"]
         #     )
         # )
-        # result_data_received = ""
-        return result_data_received
+        return cache[self.identifier]["data_received"]
 
     def initNode(self):
         """Init node instance."""
@@ -296,39 +326,37 @@ class OLADeamon(bpy.types.Node, AnimationNode):
         # print("cache:", cache)
         # print("cache:", cache[self.identifier])
 
-        # print("universeListItemsUpdate")
-        self.universeListItemsUpdate()
+        init_successfull = True
 
-        # print("init serial port:")
-        # print("self.baudrate", self.baudrate)
-        # print("self.port", self.port)
-
-        # setup serial port
-        # cache[self.identifier]["serial"] = serial.Serial()
-        # cache[self.identifier]["serial"].port = port
-        # cache[self.identifier]["serial"].baudrate = baudrate
-
-        # https://pythonhosted.org/pyserial/shortintro.html#eol
-        # ser = serial.serial_for_url(
-        #     self.port,
-        #     baudrate=self.baudrate,
-        #     timeout=0,
-        #     do_not_open=True
-        # )
-        # sio = io.TextIOWrapper(io.BufferedRWPair(ser, ser))
-        # cache[self.identifier]["serial"] = ser
-        # cache[self.identifier]["serialio"] = sio
-        self.connectButtonUpdate()
-        #
-        # sio.write(unicode("hello\n"))
-        # # it is buffering. required to get the data out *now*
-        # sio.flush()
-        # hello = sio.readline()
-        # print(hello == unicode("hello\n"))
-        # print("done.")
+        # setup import path for ola
+        # sys.path.append("home/stefan/ola/python/")
+        sys.path.append(self.olapath)
+        try:
+            # setup ola_manager
+            cache[self.identifier]["ola_manager"] = OLAThread()
+        except Exception as e:
+            init_successfull = False
+            error_message = (
+                "Error during creating ola_manager: " +
+                str(e) + " " +
+                "check your API Path!!"
+            )
+            showTextPopup(
+                text=error_message,
+                title="Error",
+                icon="INFO"
+            )
+            print(error_message)
+            raise e
+        else:
+            self.connectButtonUpdate()
+            # print("universeListItemsUpdate")
+            self.universeListItemsUpdate()
 
         # lastly set init done flag:
-        cache[self.identifier]["init_done"] = True
+        cache[self.identifier]["init_done"] = init_successfull
+        # if init_successfull:
+        #     self.connect()
 
     def delete(self):
         """Clean up."""
@@ -337,80 +365,32 @@ class OLADeamon(bpy.types.Node, AnimationNode):
     ##########################################
     # internal functions
 
-    def open(self):
-        """Open Serial Port."""
-        if not cache[self.identifier]["serial"].is_open:
-            # print("open port:")
-            # print(" serial:", cache[self.identifier]["serial"])
-            # print(" port:", cache[self.identifier]["serial"].port)
-            # print(" baudrate:", cache[self.identifier]["serial"].baudrate)
-            # print(" timeout:", cache[self.identifier]["serial"].timeout)
-            ser = cache[self.identifier]["serial"]
-            try:
-                ser.open()
-            except serial.serialutil.SerialException as e:
-                error_message = (
-                    "Port {} is already in use by other program: {}"
-                    .format(
-                        ser.port,
-                        e
-                    )
-                )
-                showTextPopup(
-                    text=error_message,
-                    title="Error",
-                    icon="INFO"
-                )
-                # print(error_message)
-            # print(" is_open:", ser.is_open)
-
-            # port already open check based on:
-            # How to check if serial port is already open in Linux,
-            # using Python 2.7 and pyserial?
-            # http://stackoverflow.com/a/19823120/574981
-            # https://docs.python.org/3/library/sys.html#sys.platform
-            if sys.platform.startswith('linux'):
-                # Linux-specific code here...
-                # only try to lock if open was successfully
-                if ser.is_open:
-                    try:
-                        # lock EX exclusive NB nonblocking
-                        fcntl.flock(
-                            ser.fileno(),
-                            fcntl.LOCK_EX | fcntl.LOCK_NB
-                        )
-                        pass
-                    except IOError as e:
-                        error_message = (
-                            "Port {} is already in use by other program: {}"
-                            .format(
-                                ser.port,
-                                e
-                            )
-                        )
-                        showTextPopup(
-                            text=error_message,
-                            title="Error",
-                            icon="INFO"
-                        )
-                        # print(error_message)
-                        # if lock failed close it.
-                        ser.close()
+    def connect(self):
+        """Connect to OLA Deamon."""
+        ola_manager = cache[self.identifier]["ola_manager"]
+        ola_manager.start_ola()
         self.connectButtonUpdate()
 
     def close(self):
         """Open Serial Port."""
-        ser = cache[self.identifier]["serial"]
-        if ser.is_open:
-            print("close port:")
-            if sys.platform.startswith('linux'):
-                # unlock
-                try:
-                    fcntl.flock(ser.fileno(), fcntl.LOCK_UN)
-                except IOError as e:
-                    print(
-                        "execption at unlocking port {}: {}".
-                        format(ser.port, e)
-                    )
-            ser.close()
+        ola_manager = cache[self.identifier]["ola_manager"]
+        ola_manager.stop_ola()
         self.connectButtonUpdate()
+
+
+# class OLAClientSocket(bpy.types.NodeSocket, AnimationNodeSocket):
+#     bl_idname = "an_OLAClientSocket"
+#     bl_label = "OLAClient Socket"
+#     dataType = "OLAClient"
+#     allowedInputTypes = ["Object"]
+#     drawColor = (0.5, 0.9, 1.0, 1)
+#     storable = False
+#     comparable = False
+#
+#     @classmethod
+#     def getDefaultValue(cls):
+#         return None
+#
+#     @classmethod
+#     def getDefaultValueCode(cls):
+#         return "None"
