@@ -226,8 +226,8 @@ class OLAClient(bpy.types.Node, AnimationNode):
         ):
             ola_manager = cache[self.identifier]["ola_manager"]
             state = ola_manager.state
-            print("state:", state)
-            cache[self.identifier]["connectButtonLabel"] = str(state)
+            print("state: {!r}".format(state))
+            cache[self.identifier]["connectButtonLabel"] = state.name
             # if state == OLAThread_States.standby:
             #     # currently disconnected. so button opens connection
             #     cache[self.identifier]["connectButtonLabel"] = "connect"
@@ -282,6 +282,28 @@ class OLAClient(bpy.types.Node, AnimationNode):
                 array.array('B', [255, 100, 0, 5])
             )
             print("done.")
+            print("##### TESTS #####")
+            print("self.identifier", self.identifier)
+            repr(self.identifier)
+            # print("check what OLAThread_States standby & running repr:")
+            # blender internal repr is broken!!
+            # repr(OLAThread_States.standby)
+            # repr(OLAThread_States.running)
+            # print("{!r}".format(OLAThread_States.standby))
+            # print("{!r}".format(OLAThread_States.running))
+            # print("check OLAThread_States repr:")
+            # print("{!r}".format(OLAThread_States))
+            # print("check OLAThread_States print:")
+            # print(OLAThread_States)
+            # print("check OLAThread_States.__dict__ repr:")
+            # repr(OLAThread_States.__dict__)
+            # print("done")
+            print("list(OLAThread_States):")
+            print(list(OLAThread_States))
+            print("ola_manager.state: {!r}".format(
+                cache[self.identifier]["ola_manager"].state
+            ))
+            print("##### END #####")
         else:
             print("have to do my init...")
 

@@ -233,16 +233,18 @@ class OLAThread(threading.Thread):
     def stop_connection(self):
         """stop ola wrapper."""
         if self.state is not OLAThread_States.standby:
-            # self.state = OLAThread_States.stopping
+            self.state = OLAThread_States.stopping
             if self.flag_wait_for_ola:
                 print("stop search for ola wrapper.")
                 self.flag_wait_for_ola = False
             if self.flag_connected:
                 print("stop ola wrapper.")
+                # stop thread
                 self.wrapper.Stop()
             # wait for thread to finish.
+            print("join thread:")
             self.join()
-            # stop thread
+            print("joined.")
             self.state = OLAThread_States.standby
 
     def restart_connection(self):
