@@ -4,16 +4,24 @@ from collections import defaultdict
 
 import sys
 import json
-
+import array
 
 import bpy
 from ... base_types.node import AnimationNode
 from ... base_types.socket import AnimationNodeSocket
 from ... ui.info_popups import showTextPopup
-from bpy.props import *
+from bpy.props import (
+    StringProperty,
+    # BoolProperty,
+    # IntProperty,
+    # FloatProperty,
+    # FloatVectorProperty,
+    EnumProperty,
+    # PointerProperty,
+)
 
 # import needed ola helper modules
-from . olathreaded import OLAThread, OLAThread_States
+from . olathreaded import OLAThread, OLAThreadReceive, OLAThread_States
 
 olapath = "/home/stefan/ola/python"
 
@@ -174,17 +182,25 @@ class OLAClient(bpy.types.Node, AnimationNode):
             icon="FILE_REFRESH"
         )
 
+        row = layout.row(align=True)
         # connectButton
         connectButtonLabel = cache[self.identifier].get(
             "connectButtonLabel",
             "n/a"
         )
         self.invokeFunction(
-            layout,
+            row,
             "connectButtonToggle",
             text=connectButtonLabel,
             description="toggle OLA Client connection",
             icon="PLUGIN"
+        )
+        self.invokeFunction(
+            row,
+            "connectButtonUpdate",
+            text="",
+            description="update label",
+            icon="FILE_REFRESH"
         )
 
         # test button
@@ -202,7 +218,7 @@ class OLAClient(bpy.types.Node, AnimationNode):
 
     def connectButtonUpdate(self):
         """Update connectButton label."""
-        # print("connectButtonUpdate:")
+        print("connectButtonUpdate:")
         if (
             (self.identifier in cache) and
             ("init_done" in cache[self.identifier]) and
@@ -210,17 +226,20 @@ class OLAClient(bpy.types.Node, AnimationNode):
         ):
             ola_manager = cache[self.identifier]["ola_manager"]
             state = ola_manager.state
-            if state is OLAThread_States.standby:
-                # currently disconnected. so button opens connection
-                cache[self.identifier]["connectButtonLabel"] = "connect"
-            elif state is OLAThread_States.running:
-                # currently connected. so button closes connection
-                cache[self.identifier]["connectButtonLabel"] = "close"
-            # print(
-            #     "connectButtonLabel: ",
-            #     cache[self.identifier]["connectButtonLabel"]
-            # )
+            print("state:", state)
+            cache[self.identifier]["connectButtonLabel"] = str(state)
+            # if state == OLAThread_States.standby:
+            #     # currently disconnected. so button opens connection
+            #     cache[self.identifier]["connectButtonLabel"] = "connect"
+            # elif state == OLAThread_States.running:
+            #     # currently connected. so button closes connection
+            #     cache[self.identifier]["connectButtonLabel"] = "close"
+            print(
+                "connectButtonLabel: ",
+                cache[self.identifier]["connectButtonLabel"]
+            )
         else:
+            print("not available yet.")
             cache[self.identifier]["connectButtonLabel"] = "n/a"
 
     def connectButtonToggle(self):
@@ -233,12 +252,22 @@ class OLAClient(bpy.types.Node, AnimationNode):
             ola_manager = cache[self.identifier]["ola_manager"]
             state = ola_manager.state
             print("state: ", state)
-            if state is OLAThread_States.standby:
-                print("connect!!")
-                self.connect()
-            else:
-                print("close!!")
-                self.close()
+            # print("OLAThread_States.standby:", OLAThread_States.standby)
+            # print("repr state:")
+            # repr(state)
+            # print("repr 2:")
+            # repr(OLAThread_States.standby)
+            # print("- end of tests")
+            # if state == OLAThread_States.standby:
+            #     print("connect!!")
+            #     self.connect()
+            # elif state == OLAThread_States.running:
+            #     print("close!!")
+            #     self.close()
+            # else:
+            #     print("state is not nown?!")
+            ola_manager.toggle_connection()
+            self.connectButtonUpdate()
 
     def test_things(self):
         if (
@@ -247,7 +276,12 @@ class OLAClient(bpy.types.Node, AnimationNode):
             (cache[self.identifier]["init_done"] is True)
         ):
             # lines = cache[self.identifier]["serialio"].readlines()
-            print("Hallo Welt :-)")
+            print("send test frame:")
+            cache[self.identifier]["ola_manager"].dmx_send_frame(
+                1,
+                array.array('B', [255, 100, 0, 5])
+            )
+            print("done.")
         else:
             print("have to do my init...")
 
@@ -263,6 +297,8 @@ class OLAClient(bpy.types.Node, AnimationNode):
         ):
             # self.initNode(self.universelist, self.baudrate)
             self.initNode()
+
+        # execute (fill output with data)
 
         # print("execute:")
         # print(
@@ -300,12 +336,23 @@ class OLAClient(bpy.types.Node, AnimationNode):
         #             last_line = lines[len(lines)-1]
         #             # print(last_line)
         #             cache[self.identifier]["data_received"] = last_line
-        cache[self.identifier]["data_received"] = [
-            0, 200, 255,    # 1 türkis
-            0, 255, 0,      # 4 green
-            150, 100, 0,      # 7 yellow
-            100, 0, 200,    # 10 lounge
-        ]
+
+        # cache[self.identifier]["data_received"] = [
+        #     0, 200, 255,    # 1 türkis
+        #     0, 255, 0,      # 4 green
+        #     150, 100, 0,      # 7 yellow
+        #     100, 0, 200,    # 10 lounge
+        # ]
+        ola_manager = cache[self.identifier]["ola_manager"]
+        data_raw = ola_manager.get_received_data()
+        # handle special case that there are no data available
+        data_as_list = []
+        if data_raw:
+            data_as_list = data_raw.tolist()
+            # print("data_raw", data_raw)
+            # print("data_as_list", data_as_list)
+        cache[self.identifier]["data_received"] = data_as_list
+
         # return cached data
         # print(
         #     "Node {}:  data_received: {}".format(
@@ -333,7 +380,8 @@ class OLAClient(bpy.types.Node, AnimationNode):
         sys.path.append(self.olapath)
         try:
             # setup ola_manager
-            cache[self.identifier]["ola_manager"] = OLAThread()
+            # cache[self.identifier]["ola_manager"] = OLAThread()
+            cache[self.identifier]["ola_manager"] = OLAThreadReceive()
         except Exception as e:
             init_successfull = False
             error_message = (
@@ -368,13 +416,13 @@ class OLAClient(bpy.types.Node, AnimationNode):
     def connect(self):
         """Connect to OLA Deamon."""
         ola_manager = cache[self.identifier]["ola_manager"]
-        ola_manager.start_ola()
+        ola_manager.start_connection()
         self.connectButtonUpdate()
 
     def close(self):
         """Open Serial Port."""
         ola_manager = cache[self.identifier]["ola_manager"]
-        ola_manager.stop_ola()
+        ola_manager.stop_connection()
         self.connectButtonUpdate()
 
 

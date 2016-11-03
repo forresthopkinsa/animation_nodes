@@ -208,6 +208,7 @@ class OLAThread(threading.Thread):
                 self.wrapper.Stop()
                 print("olad not running anymore.")
         else:
+            print("olad not running.")
             # throw error
             pass
 
@@ -222,14 +223,14 @@ class OLAThread(threading.Thread):
             pass
 
     # managment functions
-    def start_ola(self):
+    def start_connection(self):
         """switch to state running."""
-        print("start_ola")
+        print("start_connection")
         if self.state == OLAThread_States.standby:
             self.state = OLAThread_States.waiting
             self.start()
 
-    def stop_ola(self):
+    def stop_connection(self):
         """stop ola wrapper."""
         if self.state is not OLAThread_States.standby:
             # self.state = OLAThread_States.stopping
@@ -244,6 +245,56 @@ class OLAThread(threading.Thread):
             # stop thread
             self.state = OLAThread_States.standby
 
+    def restart_connection(self):
+        self.stop_connection()
+        self.start_connection()
+
+    def toggle_connection(self):
+        if self.state == OLAThread_States.standby:
+            self.start_connection()
+        elif self.state != OLAThread_States.standby:
+            self.stop_connection()
+
+
+class OLAThreadReceive(OLAThread):
+    """Receive Data Thread save."""
+
+    def __init__(self):
+        """Init things."""
+        # super(OLAThread, self).__init__()
+        OLAThread.__init__(self)
+
+        self.universe = 1
+        self.data_received = None
+        self.data_received_lock = threading.Lock()
+
+    def ola_connected(self):
+        """register receive callback and switch to running mode."""
+        self.client.RegisterUniverse(
+            self.universe,
+            self.client.REGISTER,
+            self.dmx_receive_frame
+        )
+        # python3 syntax
+        super().ola_connected()
+        # python2 syntax
+        # super(OLAThread, self).ola_connected()
+        # explicit call
+        # OLAThread.ola_connected(self)
+
+    def dmx_receive_frame(self, data):
+        """receive one dmx frame."""
+        # print("data: {}".format(data))
+        repr(data)
+        start = time.time()
+        with self.data_received_lock:
+            self.data_received = data
+
+    def get_received_data(self):
+        with self.data_received_lock:
+            return self.data_received
+
+
 ##########################################
 if __name__ == '__main__':
 
@@ -255,7 +306,7 @@ if __name__ == '__main__':
 
     my_olathread = OLAThread()
 
-    my_olathread.start_ola()
+    my_olathread.start_connection()
 
     # wait for user to hit key.
     try:
@@ -272,6 +323,6 @@ if __name__ == '__main__':
         print("\nstop.")
 
     # blocks untill thread has joined.
-    my_olathread.stop_ola()
+    my_olathread.stop_connection()
 
     # ###########################################
